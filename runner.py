@@ -5,7 +5,7 @@ import queue
 from collections import namedtuple
 from concurrent.futures import Future, Executor
 from concurrent.futures.thread import _WorkItem
-from threading import Thread, Event
+from threading import Thread, Event, stack_size
 from time import sleep, time
 
 from src.cli import init_argparse
@@ -17,6 +17,8 @@ from src.proxies import update_proxies
 from src.system import fix_ulimits, is_latest_version
 from src.targets import Targets
 
+
+stack_size(512*1024)
 
 Params = namedtuple('Params', 'target, method, threads')
 
