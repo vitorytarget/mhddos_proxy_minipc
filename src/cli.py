@@ -1,8 +1,10 @@
 import argparse
 import random
-from multiprocessing import cpu_count
 
-from .core import THREADS_PER_CORE, MAX_DEFAULT_THREADS, UDP_THREADS, WORK_STEALING_DISABLED, ONLY_MY_IP
+from .core import (
+    DEFAULT_THREADS,
+    SCHEDULER_INITIAL_CAPACITY, SCHEDULER_FORK_SCALE, SCHEDULER_FAILURE_DELAY,
+)
 from .mhddos import Methods
 
 
@@ -22,14 +24,14 @@ def init_argparse() -> argparse.ArgumentParser:
         '-t',
         '--threads',
         type=int,
-        default=min(THREADS_PER_CORE * cpu_count(), MAX_DEFAULT_THREADS),
-        help=f'Total number of threads to run (default is CPU * {THREADS_PER_CORE})',
+        default=DEFAULT_THREADS,
+        help=f'Total number of threads to run (default is {DEFAULT_THREADS})',
     )
     parser.add_argument(
-        '--udp-threads',
+        '--copies',
         type=int,
-        default=UDP_THREADS,
-        help=f'Total number of threads to run for UDP sockets (defaults to {UDP_THREADS})',
+        default=1,
+        help='Number of copies to run (default is 1)',
     )
     parser.add_argument(
         '--rpc',
@@ -65,7 +67,7 @@ def init_argparse() -> argparse.ArgumentParser:
         nargs='+',
         type=str.upper,
         default=['GET', random.choice(['POST', 'STRESS'])],
-        choices=Methods.LAYER7_METHODS,
+        choices=Methods.HTTP_METHODS,
         help='List of HTTP(s) attack methods to use. Default is GET + POST|STRESS',
     )
     parser.add_argument(
@@ -77,18 +79,29 @@ def init_argparse() -> argparse.ArgumentParser:
         action='store_true',
         default=False,
     )
+
+    # Advanced
     parser.add_argument(
-        '--switch-after',
+        '--scheduler-initial-capacity',
         type=int,
-        default=100,
-        help=(
-            "Advanced setting. Make sure to test performance when setting non-default value. "
-            "Defines how many cycles each threads executes over specific target before "
-            "switching to another one. "
-            f"Set to {WORK_STEALING_DISABLED} to disable switching (old mode)"
-        ),
+        default=SCHEDULER_INITIAL_CAPACITY,
+        help='How many tasks per target to initialize on launch',
+    )
+    parser.add_argument(
+        '--scheduler-fork-scale',
+        type=int,
+        default=SCHEDULER_FORK_SCALE,
+        help='How many tasks to fork on successful connect to the target',
+    )
+    parser.add_argument(
+        '--scheduler-failure-delay',
+        type=float,
+        default=SCHEDULER_FAILURE_DELAY,
+        help='Time delay before re-launching failed tasks (seconds)',
     )
 
+    # Deprecated
     parser.add_argument('-p', '--period', type=int, help='DEPRECATED')
     parser.add_argument('--proxy-timeout', type=float, help='DEPRECATED')
+    parser.add_argument('--udp-threads', type=int, help='DEPRECATED')
     return parser

