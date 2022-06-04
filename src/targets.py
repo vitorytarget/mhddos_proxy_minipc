@@ -1,3 +1,4 @@
+import os
 import time
 from hashlib import md5
 from typing import Dict, List, Optional, Tuple
@@ -7,6 +8,7 @@ from yarl import URL
 
 from .core import cl, logger
 from .dns_utils import resolve_all_targets
+from .i18n import translate as t
 from .system import read_or_fetch
 
 
@@ -18,10 +20,7 @@ class Target:
     OPTION_RPC = "rpc"
     OPTION_HIGH_WATERMARK = "watermark"
 
-    url: URL
-    method: Optional[str]
-    options: Options
-    addr: Optional[str]
+    __slots__ = ['url', 'method', 'options', 'addr']
 
     def __init__(
         self,
@@ -117,8 +116,8 @@ class TargetsLoader:
         config_targets = await self._load_config()
         if config_targets:
             logger.info(
-                f"{cl.YELLOW}Завантажено конфіг {self._config} "
-                f"на {cl.BLUE}{len(config_targets)} цілей{cl.RESET}"
+                f"{cl.YELLOW}{t('Loaded config')} {cl.BLUE}{os.path.basename(self._config)}{cl.YELLOW} "
+                f"{t('for')} {cl.BLUE}{len(config_targets)} {t('targets')}{cl.RESET}"
             )
         all_targets = self._targets + (config_targets or [])
         if resolve:
@@ -150,6 +149,7 @@ class TargetsLoader:
 
 
 class TargetStats:
+    __slots__ = ['_target', '_method', '_sig', '_requests', '_bytes', '_conns', '_reset_at']
 
     def __init__(self, target: Target, method: str):
         self._target = target
@@ -162,7 +162,7 @@ class TargetStats:
 
     @property
     def target(self) -> Tuple[Target, str, str]:
-        return (self._target, self._method, self._sig)
+        return self._target, self._method, self._sig
 
     def track(self, rs: int, bs: int) -> None:
         self._requests += rs
