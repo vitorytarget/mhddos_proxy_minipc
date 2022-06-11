@@ -1,7 +1,7 @@
 import argparse
 import random
 
-from .core import DEFAULT_THREADS, SCHEDULER_FORK_SCALE, SCHEDULER_INITIAL_CAPACITY
+from .core import COPIES_AUTO, DEFAULT_THREADS, SCHEDULER_FORK_SCALE, SCHEDULER_INITIAL_CAPACITY
 from .i18n import LANGUAGES
 from .mhddos import Methods
 
@@ -26,9 +26,9 @@ def init_argparse() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         '--copies',
-        type=int,
+        type=lambda val: val if val == COPIES_AUTO else int(val),
         default=1,
-        help='Number of copies (default is 1)',
+        help='Number of copies (default is 1). Use "auto" to set the value automatically',
     )
     parser.add_argument(
         '--debug',
@@ -58,6 +58,11 @@ def init_argparse() -> argparse.ArgumentParser:
     parser.add_argument(
         '--proxies',
         help='URL or local path to file with proxies to use',
+    )
+    parser.add_argument(
+        '--proxy',
+        nargs='*',
+        help='List of proxies to use, separated by spaces',
     )
     parser.add_argument(
         '--itarmy',

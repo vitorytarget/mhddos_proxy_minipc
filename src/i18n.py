@@ -38,7 +38,7 @@ TRANSLATIONS = {
     'No targets specified for the attack': {
         'ua': 'Не вказано жодної цілі для атаки'
     },
-    'Launching the attack ...': {
+    'Launching the attack...': {
         'ua': 'Запускаємо атаку...'
     },
     'Empty config loaded - the previous one will be used': {
@@ -68,17 +68,14 @@ TRANSLATIONS = {
     'Threads': {
         'ua': 'Потоків'
     },
-    'Targets': {
-        'ua': 'Цілей'
+    'Using only proxies': {
+        'ua': 'Атака тільки через проксі'
     },
-    'Proxies': {
-        'ua': 'Проксі'
+    'Using both proxies and your IP/VPN': {
+        'ua': 'Атака через проксі та ваш IP/VPN'
     },
-    'The attack also uses your IP/VPN': {
-        'ua': 'Атака також використовує ваш IP/VPN'
-    },
-    'Only your IP/VPN is used (no proxies)': {
-        'ua': 'Атака використовує тільки ваш IP/VPN (без проксі)'
+    'Using only your IP/VPN (no proxies)': {
+        'ua': 'Атака тільки через ваш IP/VPN (без проксі)'
     },
     'Delay in execution of operations detected': {
         'ua': 'Зафіксована затримка у виконанні операцій'
@@ -100,6 +97,12 @@ TRANSLATIONS = {
     },
     'Instead of high `-t` value consider using': {
         'ua': 'Замість високого значення `-t` краще використати'
+    },
+    'The `--debug` option is not needed for common usage and may impact performance': {
+        'ua': 'Параметр `--debug` не потрібен для звичайного використання і може впливати на продуктивність'
+    },
+    'Try running with automatic updates: ': {
+        'ua': 'Радимо запускати скрипт з автоматичним оновленням: '
     },
     '`uvloop` activated successfully': {
         'ua': '`uvloop` успішно активовано'

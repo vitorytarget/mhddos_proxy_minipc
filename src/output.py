@@ -1,6 +1,6 @@
 from typing import List
 
-from .core import CPU_COUNT, CPU_PER_PROCESS, DEFAULT_THREADS, cl, logger
+from .core import CPU_COUNT, CPU_PER_COPY, DEFAULT_THREADS, cl, logger, USE_ONLY_MY_IP
 from .i18n import translate as t
 from .mhddos import Tools
 from .targets import TargetStats
@@ -37,21 +37,20 @@ def show_statistic(statistics: List[TargetStats], debug: bool):
 
 def print_status(
     num_threads: int,
-    num_proxies: int,
-    num_targets: int,
     use_my_ip: int,
     overtime: bool,
 ):
-    message = f"{cl.YELLOW}{t('Threads')}: {cl.BLUE}{num_threads}{cl.RESET} | "
-    if num_proxies:
-        message += f"{cl.YELLOW}{t('Proxies')}: {cl.BLUE}{num_proxies}{cl.RESET}"
-        if use_my_ip:
-            message += f" | {cl.MAGENTA}{t('The attack also uses your IP/VPN')} {cl.RESET}"
-        logger.info(message)
+    if not use_my_ip:
+        proxies_message = t('Using only proxies')
+    elif use_my_ip == USE_ONLY_MY_IP:
+        proxies_message = t('Using only your IP/VPN (no proxies)')
     else:
-        logger.info(
-            message + f"{cl.MAGENTA}{t('Only your IP/VPN is used (no proxies)')}{cl.RESET}"
-        )
+        proxies_message = t('Using both proxies and your IP/VPN')
+
+    logger.info(
+        f"{cl.YELLOW}{t('Threads')}: {cl.BLUE}{num_threads} | "
+        f"{cl.MAGENTA}{proxies_message}{cl.RESET}"
+    )
 
     if overtime:
         logger.warning(
@@ -71,7 +70,7 @@ def print_banner(args):
         rows.append(
             f"- {cl.YELLOW}{t('Workload (number of threads)')}:{cl.BLUE} {t('use flag `-t XXXX`, default is')} {DEFAULT_THREADS}"
         )
-    elif args.threads > 10000 and args.copies == 1 and CPU_COUNT > CPU_PER_PROCESS:
+    elif args.threads > 10000 and args.copies == 1 and CPU_COUNT > CPU_PER_COPY:
         rows.append(
             f"- {cl.CYAN}{t('Instead of high `-t` value consider using')} {cl.YELLOW}`--copies 2`{cl.RESET}"
         )

@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 from aiohttp_socks import ProxyConnector
 from yarl import URL
 
-from .core import ONLY_MY_IP, PROXIES_URLS
+from .core import USE_ONLY_MY_IP
 from .dns_utils import resolve_all
 from .system import fetch, read_or_fetch
 
@@ -38,7 +38,13 @@ def normalize_url(url: str) -> str:
 
 class ProxySet:
 
-    def __init__(self, proxies_file: Optional[str] = None, skip_ratio: int = 0):
+    def __init__(
+        self,
+        provided_proxies: Optional[str] = None,
+        proxies_file: Optional[str] = None,
+        skip_ratio: int = 0
+    ):
+        self._provided_proxies = provided_proxies
         self._proxies_file = proxies_file
         self._skip_ratio = skip_ratio
         self._loaded_proxies = []
@@ -46,16 +52,16 @@ class ProxySet:
 
     @property
     def has_proxies(self) -> bool:
-        return self._skip_ratio != ONLY_MY_IP
+        return self._skip_ratio != USE_ONLY_MY_IP
 
-    async def reload(self) -> int:
+    async def reload(self, config) -> int:
         if not self.has_proxies:
             return 0
 
-        if self._proxies_file:
-            proxies = await load_provided_proxies(self._proxies_file)
+        if self._provided_proxies or self._proxies_file:
+            proxies = await load_provided_proxies(self._provided_proxies, self._proxies_file)
         else:
-            proxies = await load_system_proxies()
+            proxies = await load_system_proxies(config)
 
         if not proxies:
             return 0
@@ -112,14 +118,21 @@ class NoProxySet:
         pass
 
 
-async def load_provided_proxies(proxies_file: str) -> Optional[List[str]]:
-    content = await read_or_fetch(proxies_file)
-    proxies = list(map(normalize_url, content.split()))
+async def load_provided_proxies(
+    provided: Optional[List[str]],
+    proxies_file: Optional[str]
+) -> Optional[List[str]]:
+    proxies = provided or []
+    if proxies_file:
+        content = await read_or_fetch(proxies_file)
+        if content:
+            proxies.extend(content.split())
+    proxies = list(map(normalize_url, proxies))
     return proxies
 
 
-async def load_system_proxies():
-    raw = await fetch(random.choice(PROXIES_URLS))
+async def load_system_proxies(config):
+    raw = await fetch(random.choice(config['proxies_urls']))
     try:
         proxies = obtain_proxies(raw)
     except Exception:
