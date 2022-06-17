@@ -39,21 +39,21 @@ def init_argparse() -> argparse.ArgumentParser:
     parser.add_argument(
         '--vpn',
         dest='use_my_ip',
-        const=10,
+        const=2,
         default=0,
         nargs='?',
         type=int,
         action='store',
         help='Use both my IP and proxies for the attack. '
-             'Optionally, specify a percent of using my IP (default is 10%%)',
+             'Optionally, specify a chance of using my IP (default is 2%%)',
     )
     parser.add_argument(
         '--http-methods',
         nargs='+',
         type=str.upper,
-        default=['GET', random.choice(['POST', 'STRESS'])],
+        default=['GET'],
         choices=Methods.HTTP_METHODS,
-        help='List of HTTP(L7) methods to use. Default is GET + POST|STRESS',
+        help='List of HTTP(L7) methods to use. Default is GET',
     )
     parser.add_argument(
         '--proxies',

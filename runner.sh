@@ -5,6 +5,7 @@ PID=""
 
 RED="\033[1;31m"
 GREEN="\033[1;32m"
+BLUE="\033[1;34m"
 RESET="\033[0m"
 
 PYTHON=$1
@@ -13,6 +14,7 @@ SCRIPT_ARGS="${@:2}"
 trap 'shutdown' SIGINT SIGQUIT SIGTERM ERR
 
 function shutdown() {
+    echo -e "\n${BLUE}---> Shutting down...${RESET}"
     stop_script
     exit
 }
@@ -50,16 +52,24 @@ do
 
   while [ -z "$PID" ]
   do
+
     AUTO_MH=1 $PYTHON runner.py $SCRIPT_ARGS & PID=$!
     sleep 1
+
+    if [ "${SCRIPT_ARGS}" == "--help" ]
+    then
+      exit 0
+    fi
+
     if ! kill -0 $PID
     then
       PID=""
       echo -e "\n${RED}Error starting - retry in 30 seconds! Ctrl+C to exit${RESET}"
       sleep 30
     fi
+
   done
 
-  sleep 666
+  sleep 600
 
 done

